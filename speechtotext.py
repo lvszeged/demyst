@@ -67,12 +67,8 @@ class SpeechToTextAPI():
                 # TODEBUG: Trying to stream bytearrays is not working!
                 # The example JavaScript code sends audio data as 16 bit int arrays
                 
-                test_data = bytearray(b"\x00\x00\x00\x00")
-                #await self.ws.send([int.from_bytes(test_data, sys.byteorder)])
-                #await self.ws.send(audio_frame)
-                await self.ws.send(test_data)
-                #resp = await self.ws.recv()
-                #return resp
+                await self.ws.send(audio_frame)
+                
                 if self.is_sending is True:
                     self.frames_sent+=1
                     if self.frames_sent % 10000 == 0:
@@ -103,10 +99,10 @@ class SpeechToTextAPI():
     #   wav_filename:   string
     #   wav_length:     int (length of the data part only)
     #   wav_nframes:    int (number of audio frames)
-    async def ws_wav_upload(self, websocket, wav_filename, wav_length, wav_nframes): 
+    async def ws_wav_upload(self, websocket, wav_filename, wav_length, wav_nframes, wav_framerate): 
         with open(wav_filename, "rb") as wav_file_bin:
             # Warning: Some parameters below are hardcoded!
-            await websocket.send("control|start;16000;-1;1," + str(wav_length))
+            await websocket.send("control|start;" + str(wav_framerate) + ";-1;1," + str(wav_length))
            
             wav_bin_header = bytearray()
             wav_bin_data = bytearray()
@@ -136,10 +132,11 @@ class SpeechToTextAPI():
                 print(wav_file.getparams()) # FORDEBUG
                 wav_nframes = wav_file.getnframes()
                 wav_length = wav_nframes*wav_file.getsampwidth()
+                wav_framerate = wav_file.getframerate()
                 wav_file.close()
                 
                 # Uploading the wav file through websocket
-                await self.ws_wav_upload(ws, wav_filename, wav_length, wav_nframes)
+                await self.ws_wav_upload(ws, wav_filename, wav_length, wav_nframes, wav_framerate)
                 
             except websockets.ConnectionClosed:
                 return
@@ -149,27 +146,18 @@ class SpeechToTextAPI():
                 #print(message)
                 if message.startswith("result|1;"):
                     return message
- 
-def outoftime_handler(signum, frame):
-    raise Exception("Out of time exception!")
                
 if __name__ == "__main__":
     if(len(sys.argv) > 2):
-        print(f"Recognizing speech in: {sys.argv[1]}")
+        print(f"Recognizing speech in: {sys.argv[2]}")
         stt_uri = sys.argv[1]
         wav_filename = sys.argv[2]
         
         stt_api = SpeechToTextAPI(sys.argv[1])
         
-        # Time-out after 10 seconds
-        signal.signal(signal.SIGALRM, outoftime_handler)
-        signal.alarm(10)
-        try:
-            if asyncio.run(stt_api.ws_check_connection()):        
-                res = asyncio.run(stt_api.ws_wav_recognition(wav_filename))
-                print("Result: ", res.split(";")[1])
-            else:
-                print("Unable to establish connection to the ASR server!")
-        except Exception as e:
-            print("ERROR")
-        
+        res = asyncio.run(stt_api.ws_wav_recognition(wav_filename))
+        if len(res) > 1:
+            print("Result: ", res.split(";")[1])
+        else:
+            print("Invalid result.")
+            
